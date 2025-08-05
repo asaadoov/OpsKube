@@ -1,14 +1,9 @@
-name: Deploy to GKE
+name: Deploy to k8s
 
 on:
   push:
     branches:
       - main
-
-env:
-  CLUSTER_NAME: YOUR_CLUSTER_NAME
-  CLUSTER_ZONE: us-central1-a
-  PROJECT_ID: YOUR_PROJECT_ID
 
 jobs:
   deploy:
@@ -27,14 +22,7 @@ jobs:
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-    - name: Authenticate to Google Cloud
-      uses: google-github-actions/setup-gcloud@v1
-      with:
-        project_id: ${{ env.PROJECT_ID }}
-        service_account_key: ${{ secrets.GCP_SA_KEY }}
-        export_default_credentials: true
-
+    
     - name: Build and Push Docker Images
       run: |
         for service in auth-service todo-service api-gateway frontend; do
