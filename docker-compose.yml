@@ -1,0 +1,130 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  # PostgreSQL for Auth Service
+  postgres-auth:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: authdb
+      POSTGRES_USER: authuser
+      POSTGRES_PASSWORD: authpassword
+    volumes:
+      - postgres_auth_data:/var/lib/postgresql/data
+    networks:
+      - microservices-network
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authuser -d authdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL for Todo Service
+  postgres-todo:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: todoapp
+      POSTGRES_USER: todouser
+      POSTGRES_PASSWORD: todopassword
+    volumes:
+      - postgres_todo_data:/var/lib/postgresql/data
+    networks:
+      - microservices-network
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U todouser -d todoapp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    networks:
+      - microservices-network
+    depends_on:
+      - api-gateway
+    restart: unless-stopped
+
+  # Auth Service
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+    environment:
+      - AUTH_DATABASE_URL=postgresql://authuser:authpassword@postgres-auth:5432/authdb
+      - JWT_SECRET_KEY=your-super-secret-jwt-key-change-in-production
+    networks:
+      - microservices-network
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Todo Service
+  todo-service:
+    build:
+      context: ./todo-service
+      dockerfile: Dockerfile
+    depends_on:
+      postgres-todo:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://todouser:todopassword@postgres-todo:5432/todoapp
+      - AUTH_SERVICE_URL=http://auth-service:8001
+    networks:
+      - microservices-network
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      todo-service:
+        condition: service_healthy
+    environment:
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - TODO_SERVICE_URL=http://todo-service:8000
+    networks:
+      - microservices-network
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  postgres_auth_data:
+  postgres_todo_data:
+
+networks:
+  microservices-network:

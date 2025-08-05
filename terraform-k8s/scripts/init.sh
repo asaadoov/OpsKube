@@ -1,0 +1,1 @@
+echo "Node initialized." > /tmp/k8s-init.log
