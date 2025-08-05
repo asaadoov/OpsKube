@@ -29,4 +29,5 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 80
-  type: LoadBalancer
+      nodePort: 31225  # Use the existing port assignment
+  type: NodePort
