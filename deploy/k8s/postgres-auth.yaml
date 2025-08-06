@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-auth-config
+  namespace: default
+data:
+  POSTGRES_DB: "authdb"
+  POSTGRES_USER: "authuser"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-auth-secret
+  namespace: default
+type: Opaque
+data:
+  POSTGRES_PASSWORD: YXV0aHBhc3N3b3Jk  # base64: authpassword
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-auth-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-auth
+  namespace: default
+  labels:
+    app: postgres-auth
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-auth
+  template:
+    metadata:
+      labels:
+        app: postgres-auth
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15
+        ports:
+        - containerPort: 5432
+        envFrom:
+        - configMapRef:
+            name: postgres-auth-config
+        - secretRef:
+            name: postgres-auth-secret
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command: ["pg_isready", "-U", "authuser", "-d", "authdb"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", "authuser", "-d", "authdb"]
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-auth-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-auth
+  namespace: default
+  labels:
+    app: postgres-auth
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5432
+    targetPort: 5432
+  selector:
+    app: postgres-auth
+

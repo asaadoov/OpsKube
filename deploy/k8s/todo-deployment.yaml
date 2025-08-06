@@ -2,6 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: todo-service
+  labels:
+    app: todo-service
 spec:
   replicas: 2
   selector:
@@ -12,14 +14,49 @@ spec:
       labels:
         app: todo-service
     spec:
+      initContainers:
+      - name: wait-for-postgres
+        image: busybox:1.35
+        command: ['sh', '-c', 'until nc -z postgres-todo 5432; do echo waiting for postgres-todo; sleep 2; done;']
+      - name: wait-for-auth
+        image: busybox:1.35
+        command: ['sh', '-c', 'until nc -z auth-service 8001; do echo waiting for auth-service; sleep 2; done;']
       containers:
       - name: todo-service
         image: asaadballa/todo-service:latest
         ports:
-        - containerPort: 8001
+        - containerPort: 8000  
         env:
         - name: PORT
-          value: "8001"
+          value: "8000"
+        - name: DATABASE_URL
+          value: "postgresql://todouser:todopassword@postgres-todo:5432/todoapp"
+        - name: AUTH_SERVICE_URL
+          value: "http://auth-service:8001"  
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
 ---
 apiVersion: v1
 kind: Service
@@ -30,6 +67,6 @@ spec:
     app: todo-service
   ports:
     - protocol: TCP
-      port: 8001
-      targetPort: 8001
+      port: 8000  
+      targetPort: 8000  
   type: ClusterIP
