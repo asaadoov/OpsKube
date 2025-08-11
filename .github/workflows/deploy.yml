@@ -30,6 +30,65 @@ jobs:
           docker push asaadballa/$service:latest
         done
 
-    - name: Deploy to k8s
+    - name: Install Helm
       run: |
-        kubectl apply -f deploy/k8s/
+        curl -fsSL https://get.helm.sh/helm-v3.13.0-linux-amd64.tar.gz | tar xz
+        sudo mv linux-amd64/helm /usr/local/bin/helm
+        helm version
+
+    - name: Add Bitnami Helm Repository
+      run: |
+        helm repo add bitnami https://charts.bitnami.com/bitnami
+        helm repo update
+
+    - name: Deploy PostgreSQL with Helm
+      run: |
+        # Deploy Auth PostgreSQL
+        helm upgrade --install postgres-auth bitnami/postgresql \
+          --values helm-charts/postgres-auth-values.yaml \
+          --set fullnameOverride=postgres-auth \
+          --namespace default \
+          --wait \
+          --timeout 5m
+
+        # Deploy Todo PostgreSQL  
+        helm upgrade --install postgres-todo bitnami/postgresql \
+          --values helm-charts/postgres-todo-values.yaml \
+          --set fullnameOverride=postgres-todo \
+          --namespace default \
+          --wait \
+          --timeout 5m
+
+    - name: Wait for PostgreSQL to be Ready
+      run: |
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=postgres-auth --timeout=300s
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=postgres-todo --timeout=300s
+
+    - name: Deploy Application Services
+      run: |
+        # Deploy application manifests
+        kubectl apply -f deploy/k8s/auth-deployment.yaml
+        kubectl apply -f deploy/k8s/todo-deployment.yaml
+        kubectl apply -f deploy/k8s/api-gateway-deployment.yaml
+        kubectl apply -f deploy/k8s/frontend-deployment.yaml
+
+    - name: Wait for Application Deployments
+      run: |
+        kubectl rollout status deployment/auth-service --timeout=300s
+        kubectl rollout status deployment/todo-service --timeout=300s
+        kubectl rollout status deployment/api-gateway --timeout=300s
+        kubectl rollout status deployment/frontend --timeout=300s
+
+    - name: Verify Deployment
+      run: |
+        echo "=== Deployment Status ==="
+        kubectl get pods -o wide
+        echo ""
+        echo "=== Services ==="
+        kubectl get services
+        echo ""
+        echo "=== Helm Releases ==="
+        helm list
+        echo ""
+        echo "=== PVCs ==="
+        kubectl get pvc
