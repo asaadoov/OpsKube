@@ -1,4 +1,4 @@
-name: Deploy to k8s
+name: Deploy Applications to k8s
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   deploy:
-    name: Build and Deploy
+    name: Build and Deploy Applications
     runs-on: k8s
 
     steps:
@@ -26,69 +26,112 @@ jobs:
     - name: Build and Push Docker Images
       run: |
         for service in auth-service todo-service api-gateway frontend; do
+          echo "Building $service..."
           docker build -t asaadballa/$service:latest $service
           docker push asaadballa/$service:latest
         done
 
-    - name: Install Helm
+    - name: Check Database Connectivity
       run: |
-        curl -fsSL https://get.helm.sh/helm-v3.13.0-linux-amd64.tar.gz | tar xz
-        sudo mv linux-amd64/helm /usr/local/bin/helm
-        helm version
-
-    - name: Add Bitnami Helm Repository
-      run: |
-        helm repo add bitnami https://charts.bitnami.com/bitnami
-        helm repo update
-
-    - name: Deploy PostgreSQL with Helm
-      run: |
-        # Deploy Auth PostgreSQL
-        helm upgrade --install postgres-auth bitnami/postgresql \
-          --values helm-charts/postgres-auth-values.yaml \
-          --set fullnameOverride=postgres-auth \
-          --namespace default \
-          --wait \
-          --timeout 5m
-
-        # Deploy Todo PostgreSQL  
-        helm upgrade --install postgres-todo bitnami/postgresql \
-          --values helm-charts/postgres-todo-values.yaml \
-          --set fullnameOverride=postgres-todo \
-          --namespace default \
-          --wait \
-          --timeout 5m
-
-    - name: Wait for PostgreSQL to be Ready
-      run: |
-        kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=postgres-auth --timeout=300s
-        kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=postgres-todo --timeout=300s
+        echo "Checking if PostgreSQL databases are available..."
+        
+        # Check if postgres-auth service exists
+        if ! kubectl get service postgres-auth; then
+          echo "❌ postgres-auth service not found!"
+          echo "Please deploy PostgreSQL databases manually first:"
+          echo "  ./scripts/deploy-postgres-helm.sh"
+          exit 1
+        fi
+        
+        # Check if postgres-todo service exists
+        if ! kubectl get service postgres-todo; then
+          echo "❌ postgres-todo service not found!"
+          echo "Please deploy PostgreSQL databases manually first:"
+          echo "  ./scripts/deploy-postgres-helm.sh"
+          exit 1
+        fi
+        
+        echo "✅ PostgreSQL services found"
 
     - name: Deploy Application Services
       run: |
-        # Deploy application manifests
+        echo "Deploying application services..."
+        
+        # Deploy auth service
         kubectl apply -f deploy/k8s/auth-deployment.yaml
+        echo "✅ Auth service deployed"
+        
+        # Deploy todo service
         kubectl apply -f deploy/k8s/todo-deployment.yaml
+        echo "✅ Todo service deployed"
+        
+        # Deploy API gateway
         kubectl apply -f deploy/k8s/api-gateway-deployment.yaml
+        echo "✅ API Gateway deployed"
+        
+        # Deploy frontend
         kubectl apply -f deploy/k8s/frontend-deployment.yaml
+        echo "✅ Frontend deployed"
 
     - name: Wait for Application Deployments
       run: |
+        echo "Waiting for deployments to be ready..."
+        
         kubectl rollout status deployment/auth-service --timeout=300s
         kubectl rollout status deployment/todo-service --timeout=300s
         kubectl rollout status deployment/api-gateway --timeout=300s
         kubectl rollout status deployment/frontend --timeout=300s
+        
+        echo "✅ All applications deployed successfully"
 
     - name: Verify Deployment
       run: |
-        echo "=== Deployment Status ==="
+        echo "=== Deployment Verification ==="
+        
+        echo "Pods Status:"
         kubectl get pods -o wide
         echo ""
-        echo "=== Services ==="
+        
+        echo "Services:"
         kubectl get services
         echo ""
-        echo "=== Helm Releases ==="
-        helm list
+        
+        echo "Deployments:"
+        kubectl get deployments
         echo ""
-        echo "=== PVCs ==="
-        kubectl get pvc
+        
+        echo "=== Application Health Checks ==="
+        
+        # Wait a bit for services to be ready
+        sleep 30
+        
+        # Check auth service health
+        echo "Checking auth-service health..."
+        if kubectl run health-check-auth --rm -i --restart=Never --image=curlimages/curl:latest -- curl -f http://auth-service:8001/health; then
+          echo "✅ Auth service is healthy"
+        else
+          echo "⚠️ Auth service health check failed"
+        fi
+        
+        # Check todo service health
+        echo "Checking todo-service health..."
+        if kubectl run health-check-todo --rm -i --restart=Never --image=curlimages/curl:latest -- curl -f http://todo-service:8000/health; then
+          echo "✅ Todo service is healthy"
+        else
+          echo "⚠️ Todo service health check failed"
+        fi
+        
+        # Check API gateway health
+        echo "Checking api-gateway health..."
+        if kubectl run health-check-gateway --rm -i --restart=Never --image=curlimages/curl:latest -- curl -f http://api-gateway:8080/health; then
+          echo "✅ API Gateway is healthy"
+        else
+          echo "⚠️ API Gateway health check failed"
+        fi
+        
+        echo ""
+        echo "🎉 Application deployment completed!"
+        echo ""
+        echo "Note: Database management is handled manually via:"
+        echo "  - ./scripts/deploy-postgres-helm.sh"
+        echo "  - ./scripts/manage-postgres-helm.sh"
