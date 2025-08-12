@@ -14,18 +14,14 @@ spec:
       labels:
         app: auth-service
     spec:
-      initContainers:
-      - name: wait-for-postgres
-        image: busybox:1.35
-        command: ['sh', '-c', 'until nc -z postgres-auth 5432; do echo waiting for postgres-auth; sleep 2; done;']
       containers:
       - name: auth-service
         image: asaadballa/auth-service:latest
         ports:
-        - containerPort: 8001  # Changed from 8000 to 8001 to match docker-compose
+        - containerPort: 8001
         env:
         - name: PORT
-          value: "8001"  # Changed from 8000 to 8001
+          value: "8001"
         - name: AUTH_DATABASE_URL
           value: "postgresql://authuser:authpassword@postgres-auth:5432/authdb"
         - name: JWT_SECRET_KEY
@@ -37,7 +33,7 @@ spec:
           httpGet:
             path: /health
             port: 8001
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60  # Increased to give DB time to be ready
           periodSeconds: 30
           timeoutSeconds: 10
           failureThreshold: 3
@@ -45,7 +41,7 @@ spec:
           httpGet:
             path: /health
             port: 8001
-          initialDelaySeconds: 10
+          initialDelaySeconds: 30  # Increased to give DB time to be ready
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3

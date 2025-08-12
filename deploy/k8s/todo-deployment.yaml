@@ -14,13 +14,6 @@ spec:
       labels:
         app: todo-service
     spec:
-      initContainers:
-      - name: wait-for-postgres
-        image: busybox:1.35
-        command: ['sh', '-c', 'until nc -z postgres-todo 5432; do echo waiting for postgres-todo; sleep 2; done;']
-      - name: wait-for-auth
-        image: busybox:1.35
-        command: ['sh', '-c', 'until nc -z auth-service 8001; do echo waiting for auth-service; sleep 2; done;']
       containers:
       - name: todo-service
         image: asaadballa/todo-service:latest
@@ -37,7 +30,7 @@ spec:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60  # Increased to give DB time to be ready
           periodSeconds: 30
           timeoutSeconds: 10
           failureThreshold: 3
@@ -45,7 +38,7 @@ spec:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 10
+          initialDelaySeconds: 30  # Increased to give DB time to be ready
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
